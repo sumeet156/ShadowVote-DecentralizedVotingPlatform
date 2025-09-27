@@ -1,0 +1,75 @@
+// contracts/ShadowVote.compact
+contract ShadowVote {
+  // Public state (polls metadata and aggregated counts)
+  state {
+    polls: Map<u64, Poll>;    // pollId -> Poll
+    nextPollId: u64;
+  }
+
+  // Exported types (you may need to adapt depending on compact syntax)
+  type Poll = {
+    question: String;
+    options: Vec<String>;
+    counts: Vec<u64>;      // aggregated counts for each option (public)
+    creator: Address;      // public address that created the poll (optional)
+    isActive: bool;
+  };
+
+  // Input to create a poll — public (question + options must be public for listing)
+  input CreatePoll {
+    question: String;
+    options: Vec<String>;
+  }
+
+  // Private input to vote — selection is private, we only prove the selection is within range
+  input Vote {
+    pollId: u64;
+    // 'choice' is a private witness (the contract should treat it as private)
+    choice: u32;            // index of option chosen (private)
+  }
+
+  // Transition: create a poll
+  transition CreatePoll {
+    let id = prev.nextPollId;
+    next.nextPollId = prev.nextPollId + 1;
+
+    // initialize counts vector length = options.len, all zeros
+    let counts = Vec::<u64>::new();
+    for (let i = 0; i < input.options.len(); i = i + 1) {
+      counts.push(0u64);
+    }
+
+    next.polls.insert(id, {
+      question: input.question,
+      options: input.options,
+      counts: counts,
+      creator: tx.sender,
+      isActive: true,
+    });
+  }
+
+  // Transition: vote (private)
+  transition Vote {
+    // Basic checks: poll exists and is active
+    require(prev.polls.contains(input.pollId), "poll not found");
+    let mut poll = prev.polls.get(input.pollId);
+
+    require(poll.isActive == true, "poll closed");
+
+    // IMPORTANT: `input.choice` is a private witness value.
+    // We must ensure it's in range: 0 <= choice < poll.options.len()
+    // The Compact language + proof system will ensure the value is hidden from chain while
+    // producing a proof that the choice is valid.
+
+    require((input.choice as u64) < poll.options.len() as u64, "invalid choice");
+
+    // increment the public count for that option
+    let idx = input.choice as usize;
+    let newCounts = poll.counts.clone();
+    newCounts[idx] = newCounts[idx] + 1u64;
+
+    // Write updated poll back into state
+    poll.counts = newCounts;
+    next.polls.insert(input.pollId, poll);
+  }
+}

@@ -1,0 +1,8 @@
+/* App-specific styles can go here */
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+}
+
+/* Extend Tailwind with custom styles if needed */
